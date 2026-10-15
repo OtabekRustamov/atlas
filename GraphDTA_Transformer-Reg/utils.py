@@ -119,8 +119,8 @@ def ci(y, f, chunk_size=512):
     for start in range(0, len(y), chunk_size):
         pair = y[start:start + chunk_size, None] > y[None, :]
         diff = f[start:start + chunk_size, None] - f[None, :]
-        z += np.count_nonzero(pair)
-        S += np.count_nonzero(pair & (diff > 0)) + 0.5 * np.count_nonzero(pair & (diff == 0))
+        z += int(np.count_nonzero(pair))
+        S += float(np.count_nonzero(pair & (diff > 0)) + 0.5 * np.count_nonzero(pair & (diff == 0)))
     return S / z
   
 def create_padding_mask(seq: object, pad_idx: object) -> object:

@@ -63,7 +63,16 @@ def parse_args():
     parser.add_argument('--val_frac', type=float, default=0.2)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--log_interval', type=int, default=20)
-    return parser.parse_args()
+    parser.add_argument('--model_dir', type=str, default='trained_model/',
+                        help='where the best checkpoint is saved (inference.py reads from here by default)')
+    opt = parser.parse_args()
+    if opt.epochs < 1:
+        parser.error('--epochs must be >= 1')
+    if opt.patience < 0:
+        parser.error('--patience must be >= 0')
+    if not 0 < opt.val_frac < 1:
+        parser.error('--val_frac must be between 0 and 1')
+    return opt
 
 
 def main():
@@ -103,11 +112,13 @@ def main():
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
 
-    model_file_name = 'model_' + model_st + '_' + dataset + '.model'
+    os.makedirs(opt.model_dir, exist_ok=True)
+    model_file_name = os.path.join(opt.model_dir, 'model_' + model_st + '_' + dataset + '.model')
     result_file_name = 'result_' + model_st + '_' + dataset + '.csv'
 
     best_val_mse = float('inf')
     best_epoch = -1
+    best_state = None
     for epoch in range(1, opt.epochs + 1):
         train(model, device, train_loader, optimizer, loss_fn, epoch, opt.log_interval)
         G, P = predicting(model, device, valid_loader)
@@ -115,7 +126,8 @@ def main():
         if val_mse < best_val_mse:
             best_val_mse = val_mse
             best_epoch = epoch
-            torch.save(model.state_dict(), model_file_name)
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            torch.save(best_state, model_file_name)
             print('val mse improved at epoch', best_epoch, '; best_val_mse:', best_val_mse, model_st, dataset)
         else:
             print(val_mse, 'No improvement since epoch', best_epoch, '; best_val_mse:', best_val_mse, model_st, dataset)
@@ -123,8 +135,12 @@ def main():
             print('Early stopping at epoch', epoch)
             break
 
-    # The test split is used exactly once, on the checkpoint chosen by validation MSE.
-    model.load_state_dict(torch.load(model_file_name, map_location=device))
+    if best_state is None:
+        raise SystemExit('Validation MSE never improved (training diverged to NaN?); no test results written.')
+
+    # The test split is used exactly once, on this run's in-memory best-validation weights
+    # (not re-read from disk, where another run could have overwritten the file).
+    model.load_state_dict(best_state)
     G, P = predicting(model, device, test_loader)
     ret = [rmse(G, P), mse(G, P), pearson(G, P), spearman(G, P), ci(G, P)]
     with open(result_file_name, 'w') as f:
