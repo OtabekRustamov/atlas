@@ -52,6 +52,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()  
     
     parser.add_argument("--model", type=int, default=4, help="[GINConvNet, GATNet, GAT_GCN, GCNNet, GINTransformer]")
+    parser.add_argument('--dataset', type=str, default='davis', choices=['davis', 'kiba'],
+                        help='dataset the checkpoint was trained on')
     parser.add_argument('--model_save_path', type=str,
                         default='trained_model/')
 
@@ -78,17 +80,20 @@ if __name__ == '__main__':
     
     modeling = [GINConvNet, GATNet, GAT_GCN, GCNNet, GINTransformer][model_idx]
     model_st = modeling.__name__
-    model = load_trained_model(model_save_path, gpu, modeling, model_name='model_GINTransformer_davis.model')
+    model = load_trained_model(model_save_path, gpu, modeling,
+                               model_name='model_' + model_st + '_' + opt.dataset + '.model')
 
     test_data = {'SMILES_DRUG': [drug], 'FASTA_TARGET': [target]}
     test_data = pd.DataFrame(test_data)
 
     TEST_BATCH_SIZE = 32
-    LOG_INTERVAL = 20
-    
-    test_data = TestDataset(test_data)
-    
-    P = predicting(model, gpu, test_data)
-    
-    print("[Predicted pKd]", P)
-    print("[Predicted Kd]", pow(10, -P) * pow(10, 9))
+
+    test_loader = DataLoader(TestDataset(test_data), batch_size=TEST_BATCH_SIZE, shuffle=False)
+
+    P = predicting(model, gpu, test_loader)
+
+    if opt.dataset == 'davis':
+        print("[Predicted pKd]", P)
+        print("[Predicted Kd (nM)]", pow(10, -P) * pow(10, 9))
+    else:
+        print("[Predicted KIBA score]", P)

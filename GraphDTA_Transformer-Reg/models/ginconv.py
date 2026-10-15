@@ -49,7 +49,7 @@ class GINConvNet(torch.nn.Module):
         self.fc2 = nn.Linear(1024, 256)
         self.out = nn.Linear(256, self.n_output)        # n_output = 1 for regression task
 
-    def forward(self, data):
+    def forward(self, data, mask1=None):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         target = data.target
 

@@ -26,6 +26,15 @@ class GAT_GCN(torch.nn.Module):
         self.conv_xt_1 = nn.Conv1d(in_channels=1000, out_channels=32, kernel_size=8)
         self.fc1_xt = nn.Linear(32 * 121, output_dim)
 
+        # Transformer on protein sequence
+        self.embed_dim = embed_dim
+        encoder_layers = TransformerEncoderLayer(embed_dim, num_head, hidden_dim, drop_prob)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layer)
+        self.embed = nn.Embedding(num_features_xt + 1, embed_dim, padding_idx=0)
+        self.norm = nn.LayerNorm(embed_dim, eps=1e-6)
+        self.cls_token = nn.Parameter(torch.rand(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.rand(1, MAX_LEN + 1, embed_dim))
+
         # combined layers
         self.fc1 = nn.Linear(256, 1024)
         self.fc2 = nn.Linear(1024, 512)

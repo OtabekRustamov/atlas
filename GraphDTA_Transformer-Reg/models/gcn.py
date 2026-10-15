@@ -30,7 +30,7 @@ class GCNNet(torch.nn.Module):
         self.fc2 = nn.Linear(1024, 512)
         self.out = nn.Linear(512, self.n_output)
 
-    def forward(self, data):
+    def forward(self, data, mask1=None):
         # get graph input
         x, edge_index, batch = data.x, data.edge_index, data.batch
         # get protein input

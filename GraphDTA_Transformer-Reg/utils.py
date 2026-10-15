@@ -2,7 +2,11 @@ import os
 import numpy as np
 from math import sqrt
 from scipy import stats
-from torch_geometric.data import InMemoryDataset, DataLoader
+from torch_geometric.data import InMemoryDataset
+try:
+    from torch_geometric.loader import DataLoader
+except ImportError:  # PyG < 2.0
+    from torch_geometric.data import DataLoader
 from torch_geometric import data as DATA
 from torch.utils.data import Dataset
 from collections import OrderedDict
@@ -10,6 +14,15 @@ from rdkit import Chem
 
 import networkx as nx
 import torch
+
+
+def _load_processed(path):
+    # torch >= 2.6 defaults to weights_only=True, which cannot unpickle PyG Data objects
+    try:
+        return torch.load(path, weights_only=False)
+    except TypeError:  # torch < 1.13 has no weights_only argument
+        return torch.load(path)
+
 
 class TestbedDataset(InMemoryDataset):
     def __init__(self, root='/tmp', dataset='davis', 
@@ -22,11 +35,11 @@ class TestbedDataset(InMemoryDataset):
         self.dataset = dataset
         if os.path.isfile(self.processed_paths[0]):
             print('Pre-processed data found: {}, loading ...'.format(self.processed_paths[0]))
-            self.data, self.slices = torch.load(self.processed_paths[0])
+            self.data, self.slices = _load_processed(self.processed_paths[0])
         else:
             print('Pre-processed data {} not found, doing pre-processing...'.format(self.processed_paths[0]))
             self.process(xd, xt, y,smile_graph)
-            self.data, self.slices = torch.load(self.processed_paths[0])
+            self.data, self.slices = _load_processed(self.processed_paths[0])
 
     @property
     def raw_file_names(self):
@@ -97,28 +110,18 @@ def pearson(y,f):
 def spearman(y,f):
     rs = stats.spearmanr(y, f)[0]
     return rs
-def ci(y,f):
-    ind = np.argsort(y)
-    y = y[ind]
-    f = f[ind]
-    i = len(y)-1
-    j = i-1
-    z = 0.0
+def ci(y, f, chunk_size=512):
+    # Same result as the original O(n^2) Python loop, vectorised in row chunks to bound memory.
+    y = np.asarray(y, dtype=np.float64)
+    f = np.asarray(f, dtype=np.float64)
+    z = 0
     S = 0.0
-    while i > 0:
-        while j >= 0:
-            if y[i] > y[j]:
-                z = z+1
-                u = f[i] - f[j]
-                if u > 0:
-                    S = S + 1
-                elif u == 0:
-                    S = S + 0.5
-            j = j - 1
-        i = i - 1
-        j = i-1
-    ci = S/z
-    return ci
+    for start in range(0, len(y), chunk_size):
+        pair = y[start:start + chunk_size, None] > y[None, :]
+        diff = f[start:start + chunk_size, None] - f[None, :]
+        z += np.count_nonzero(pair)
+        S += np.count_nonzero(pair & (diff > 0)) + 0.5 * np.count_nonzero(pair & (diff == 0))
+    return S / z
   
 def create_padding_mask(seq: object, pad_idx: object) -> object:
     mask = (seq == pad_idx)
